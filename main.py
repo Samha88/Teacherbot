@@ -6,7 +6,7 @@ import re
 api_id = 22707838
 api_hash = '7822c50291a41745fa5e0d63f21bbfb6'
 session_name = "my_session"
-bot_username = "teacher_ichancy_bot"
+bot_username = "Pdf2img_bot"
 
 allowed_chat_ids = [7577774656]
 monitor_enabled = True
@@ -27,10 +27,13 @@ async def toggle_monitoring(client, message: Message):
     else:
         await message.reply("ليس لديك صلاحية التحكم بالبوت.")
 
-@app.on_message(filters.private & filters.text & filters.from_user(bot_username))
+@app.on_message(filters.private & filters.text)
 async def handle_message(client: Client, message: Message):
     if not monitor_enabled:
         return
+
+    if message.from_user and message.from_user.username != bot_username:
+        return  # تجاهل الرسائل من غير البوت المطلوب
 
     code = extract_gift_code(message.text)
     if code:
