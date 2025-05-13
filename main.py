@@ -1,63 +1,85 @@
-from pyrogram import Client, filters
-from pyrogram.types import Message
 import asyncio
-import re
+from telethon import TelegramClient, events, Button
+from aiohttp import web
+import time
 
 api_id = 22707838
 api_hash = '7822c50291a41745fa5e0d63f21bbfb6'
-session_name = "my_session"
-bot_username = "Pdf2img_bot"
+session_name = 'my_session'
 
-allowed_chat_ids = [7577774656]
-monitor_enabled = True
+admin_chat_id = 7577774656
+target_bot = 'teacher_ichancy_bot'
 
-app = Client(session_name, api_id=api_id, api_hash=api_hash)
+monitoring_enabled = True
+copied_code = ""
+last_start_time = 0  # لتتبع آخر مرة أرسل فيها /start
 
+client = TelegramClient(session_name, api_id, api_hash)
 
-@app.on_message(filters.private & filters.command(["enable", "disable"]))
-async def toggle_monitoring(client, message: Message):
-    global monitor_enabled
-    if message.from_user.id in allowed_chat_ids:
-        if message.text == "/enable":
-            monitor_enabled = True
-            await message.reply("تم تفعيل مراقبة الأكواد.")
-        else:
-            monitor_enabled = False
-            await message.reply("تم إيقاف مراقبة الأكواد.")
-    else:
-        await message.reply("ليس لديك صلاحية التحكم بالبوت.")
+@client.on(events.NewMessage(chats=admin_chat_id, pattern=r'/monitor (on|off)'))
+async def toggle_monitor(event):
+    global monitoring_enabled
+    state = event.pattern_match.group(1)
+    monitoring_enabled = (state == 'on')
+    await event.reply(f"Monitoring is now {'enabled' if monitoring_enabled else 'disabled'}.")
 
-@app.on_message(filters.private & filters.text)
-async def handle_message(client: Client, message: Message):
-    if not monitor_enabled:
+@client.on(events.NewMessage(from_users=target_bot))
+async def handle_bot_message(event):
+    global copied_code, last_start_time
+
+    if not monitoring_enabled:
         return
 
-    if message.from_user and message.from_user.username != bot_username:
-        return  # تجاهل الرسائل من غير البوت المطلوب
+    if "كود" in event.raw_text or "code" in event.raw_text.lower():
+        # استخراج الكود من الرسالة
+        lines = event.raw_text.split()
+        for word in lines:
+            if len(word) > 4:
+                copied_code = word
+                break
 
-    code = extract_gift_code(message.text)
-    if code:
-        print(f"تم استخراج الكود: {code}")
+        # حماية من التكرار: انتظار دقيقة قبل إرسال /start
+        current_time = time.time()
+        if current_time - last_start_time < 60:
+            print("تجاوز إرسال /start لتجنب الحظر المؤقت")
+            return
+        last_start_time = current_time
 
-        await client.send_message(bot_username, "/start")
-        await asyncio.sleep(2)
+        await client.send_message(target_bot, '/start')
 
-        last_msg = (await client.get_history(bot_username, limit=1))[0]
-        if last_msg.reply_markup:
-            for row in last_msg.reply_markup.inline_keyboard:
-                for button in row:
-                    if "كود" in button.text:
-                        await button.click()
-                        await asyncio.sleep(2)
-                        await client.send_message(bot_username, code)
-                        print("تم إرسال الكود")
-                        return
+        response = await client.wait_event(events.NewMessage(from_users=target_bot))
+        buttons = response.buttons
 
-def extract_gift_code(text):
-    lines = text.splitlines()
-    for line in lines:
-        if re.fullmatch(r"[A-Za-z0-9]{6,}", line.strip()):
-            return line.strip()
-    return None
+        # البحث عن زر يحتوي كلمة "كود"
+        clicked = False
+        for row in buttons:
+            for btn in row:
+                if 'كود' in btn.text or 'code' in btn.text.lower():
+                    await btn.click()
+                    clicked = True
+                    break
+            if clicked:
+                break
 
-app.run()
+        await asyncio.sleep(0.3)
+        await client.send_message(target_bot, copied_code)
+
+# Web server for Render
+async def handle(request):
+    return web.Response(text="Userbot is running")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+
+async def main():
+    await client.start()
+    print("Userbot Started")
+    await start_web_server()
+    await client.run_until_disconnected()
+
+asyncio.run(main())
