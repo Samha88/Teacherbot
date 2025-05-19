@@ -1,18 +1,15 @@
 import asyncio
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events
 from aiohttp import web
-import time
 
 api_id = 22707838
 api_hash = '7822c50291a41745fa5e0d63f21bbfb6'
 session_name = 'my_session'
 
 admin_chat_id = 7577774656
-target_bot = 'teacher_ichancy_bot'
+target_bot = 'DiamondIchancyBot'
 
 monitoring_enabled = True
-copied_code = ""
-last_start_time = 0  # لتتبع آخر مرة أرسل فيها /start
 
 client = TelegramClient(session_name, api_id, api_hash)
 
@@ -25,44 +22,16 @@ async def toggle_monitor(event):
 
 @client.on(events.NewMessage(from_users=target_bot))
 async def handle_bot_message(event):
-    global copied_code, last_start_time
+    global monitoring_enabled
 
     if not monitoring_enabled:
         return
 
-    if "كود" in event.raw_text or "code" in event.raw_text.lower():
-        # استخراج الكود من الرسالة
-        lines = event.raw_text.split()
-        for word in lines:
-            if len(word) > 4:
-                copied_code = word
-                break
-
-        # حماية من التكرار: انتظار دقيقة قبل إرسال /start
-        current_time = time.time()
-        if current_time - last_start_time < 60:
-            print("تجاوز إرسال /start لتجنب الحظر المؤقت")
-            return
-        last_start_time = current_time
-
-        await client.send_message(target_bot, '/start')
-
-        response = await client.wait_event(events.NewMessage(from_users=target_bot))
-        buttons = response.buttons
-
-        # البحث عن زر يحتوي كلمة "كود"
-        clicked = False
-        for row in buttons:
-            for btn in row:
-                if 'كود' in btn.text or 'code' in btn.text.lower():
-                    await btn.click()
-                    clicked = True
-                    break
-            if clicked:
-                break
-
-        await asyncio.sleep(0.3)
+    # مباشرة يرسل نفس الرسالة للبوت
+    copied_code = event.raw_text.strip()
+    if copied_code:
         await client.send_message(target_bot, copied_code)
+        print(f"أُرسل الكود: {copied_code}")
 
 # Web server for Render
 async def handle(request):
